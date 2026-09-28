@@ -8,6 +8,7 @@ I also included a ready-made batch script that will build the complete, ready-to
 ## How to Install
 
 Just install and start "build-windows-down-only-v3.bat"
+Or just download from release
 
 **[Original project](https://github.com/DaveMakesWaves/funsync-player)**
 
