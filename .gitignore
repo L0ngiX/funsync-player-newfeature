@@ -1,0 +1,70 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+backend-dist/
+
+# Python
+backend/__pycache__/
+backend/.venv/
+backend/*.pyc
+*.pyc
+
+# Environment / secrets
+.env
+.env.*
+
+# Logs
+*.log
+
+# Runtime caches
+thumbs/
+scripts_cache/
+.funsync/
+
+# Bundled binaries (not checked in — download separately)
+ffmpeg/*.exe
+ffmpeg/*.zip
+
+# Test media files (too large for git)
+Test.mp4
+Test-slow.funscript
+Logo.ico
+FS(1).png
+ffmpeg-linux/*.zip
+eroscripts-debug.log
+
+# Claude Code
+.claude/
+notes/
+
+# Release-stats snapshots (scripts/release-stats.sh output).
+# Default dir is notes/release-stats/ which is already covered by
+# notes/ above; these patterns cover the case where someone runs the
+# script with a custom outdir.
+release-stats-*.json
+release-stats-latest.json
+release-stats/
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Bundled Twemoji artwork for category icons (~2.7 MB, 737 SVGs).
+# Fetched at BUILD time by scripts/fetch-twemoji.mjs, not committed — same
+# treatment as ffmpeg/ and backend-dist/. Keeping generated third-party art
+# out of history matters more than the 2.7 MB: every regeneration of the
+# catalogue would otherwise add another copy, permanently.
+# The manifest IS committed (it is small, and it keeps imports resolving in a
+# fresh clone); a missing SVG degrades to font rendering, it does not break.
+renderer/assets/emoji/

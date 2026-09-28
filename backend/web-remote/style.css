@@ -1,0 +1,2194 @@
+/* FunSync Web Remote — UI mirrors the desktop app's palette and
+   typography. Colour tokens match renderer/styles/player.css so the
+   two surfaces feel like one product.
+
+   Layout (post-redesign 2026-04-27):
+     mobile (default)   — bottom nav, content-action bar above grid
+     tablet ≥ 600px     — same shell, 3-col grid, side-drawer sheets
+     desktop ≥ 1024px   — bottom nav becomes a left rail, 4-col grid
+
+   See notes/features/SCOPE-web-remote-redesign.md for the principles
+   that drove each layout choice. Visual atoms (palette, font, card
+   radii, pill shapes) are unchanged from the previous design. */
+
+:root {
+  /* Palette — identical to desktop player.css */
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-card: #1c2a4a;
+  --bg-card-hover: #233766;
+  --text-primary: #e0e0e0;
+  --text-secondary: #a0a0a0;
+  --accent: #e94560;
+  --accent-hover: #ff6b81;
+  --accent-soft: rgba(233, 69, 96, 0.14);
+  --control-hover: rgba(255, 255, 255, 0.08);
+  --border: rgba(255, 255, 255, 0.08);
+
+  /* Glass chrome (2026-08-04): translucent surface for the sticky
+     header / toolbar / bottom nav, blurred where supported. rgb of
+     --bg-primary (#1a1a2e). */
+  --glass-bg: rgba(26, 26, 46, 0.78);
+
+  /* Back-compat aliases */
+  --bg: var(--bg-primary);
+  --text: var(--text-primary);
+  --text-dim: var(--text-secondary);
+
+  /* Layout tokens */
+  --safe-top: env(safe-area-inset-top, 0);
+  --safe-bottom: env(safe-area-inset-bottom, 0);
+  --nav-height: 64px;          /* bottom nav height (mobile/tablet) */
+  --rail-width: 200px;         /* left rail width (desktop ≥1024px) */
+  --tap-min: 44px;             /* WCAG 2.5.5 / Apple HIG minimum */
+
+  /* accent as rgb triple for rgba() focus rings / glows (Modern) */
+  --accent-rgb: 233, 69, 96;
+
+  /* Non-colour scales — mirror renderer/styles/player.css. The web remote
+     ships Modern to everyone (decision A), so these hold the MODERN values;
+     the modern layer below is gated on <html data-style="modern"> (always
+     set) so a "classic remote" stays a one-line flip. See
+     notes/features/SCOPE-modern-theme.md. */
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-pill: 999px;
+
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.40), 0 2px 6px rgba(0, 0, 0, 0.30);
+  --elev-2: 0 6px 18px rgba(0, 0, 0, 0.45);
+  --elev-3: 0 16px 40px rgba(0, 0, 0, 0.50);
+  --edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-1: 150ms;
+  --dur-2: 220ms;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+
+/* ============================================================
+   Icon-button baseline
+   ============================================================ */
+.icon-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 150ms, color 150ms, border-color 150ms;
+  /* Tap target floor — ALL icon buttons inherit. WCAG 2.5.5 / Apple HIG
+     converge on 44px; we honour that everywhere. */
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  border-radius: 8px;
+}
+.icon-btn:hover { color: var(--text-primary); background: var(--control-hover); }
+.icon-btn:active { color: var(--accent); }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.icon { display: inline-flex; line-height: 0; }
+.icon svg { display: block; }
+
+/* ============================================================
+   Document shell
+   ============================================================ */
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  /* Stop Android/WebView "font boosting" (Chromium text autosizing) from
+     inflating text past the CSS size. It silently widens fixed-width labels
+     like the player's time chips, which squeezes flex rows and can push the
+     last control out of the row. Reported 2026-08-04 in the DuckDuckGo
+     browser, which is WebView-based on Android. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Hard-clip horizontal overflow at the document level — last-resort
+     guarantee that nothing in any view (library, collections, player,
+     etc.) can force a horizontal scroll past the viewport edge. The
+     targeted overflow-wrap / flex-wrap rules earlier in the stack stop
+     overflow at its source; this clips anything that slips through. */
+  max-width: 100vw;
+  /* Both elements get the bg: html catches the case where iOS Safari's
+     animated browser chrome (URL bar / bottom toolbar) momentarily
+     exposes the document background while --app-vh hasn't caught up
+     yet. Without this, the strip below body briefly shows as the
+     browser default (white in light mode, near-black in dark mode) —
+     either way it doesn't match our palette and looks like a glitch. */
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+  /* Lock body / html scroll. All scroll happens inside `.main`. Without
+     this, iOS Safari can rubber-band the document on a fast flick even
+     when content fits exactly — the rubber-band briefly exposes the
+     page edges and shows the document scrollbar as a thin light strip
+     on the right (the "white vertical bar" the user reported). */
+  overflow: hidden;
+}
+/* Belt-and-suspenders: nuke any document-level scrollbar that iOS or
+   another browser might still try to render. */
+html { scrollbar-width: none; -ms-overflow-style: none; }
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+  -webkit-appearance: none;
+  background: transparent;
+}
+
+/* App grid: header on row 1, scrolling main on row 2, bottom nav on
+   row 3. Becomes a 2-col grid (rail | rest) at desktop. The toolbar
+   was previously its own row (auto auto 1fr auto) but moved INSIDE
+   `.main` as a sticky child so the auto-hide-on-scroll transform can
+   slide it without triggering layout reflow on the rest of the grid.
+   Height layering (top wins):
+     1. `calc(var(--app-vh) * 100)` — JS-driven, updated on every
+        viewport-changing event in app.js. Authoritative on mobile
+        because iOS Safari doesn't recompute `100dvh` promptly after
+        orientation change (landscape -> portrait left the root
+        stuck at the pre-rotate height value, breaking the layout).
+     2. `100dvh` — modern dynamic viewport unit; fallback if the JS
+        hasn't run yet (e.g. between HTML parse and module execution).
+     3. `100vh` — older static fallback for browsers that lack `dvh`. */
+#app {
+  display: grid;
+  /* `minmax(0, 1fr)` instead of plain `1fr` is the critical override:
+     CSS grid items have an implicit `min-width: auto` that resolves to
+     their MIN-CONTENT width — for `.header` containing an h1 with
+     `white-space: nowrap`, min-content is the entire (unbreakable)
+     title string, ~500 px for a long video name. Without `minmax(0, …)`
+     the grid column EXPANDS to fit that min-content, dragging the
+     whole #app wider than the viewport (and the nav-tabs in row 3
+     along with it). With `minmax(0, 1fr)` the column is exactly the
+     container width regardless of any child's min-content size. */
+  grid-template-rows: auto 1fr auto;
+  grid-template-columns: minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+  height: calc(var(--app-vh, 1vh) * 100);
+}
+
+/* ============================================================
+   Header — back + title + count + refresh.
+   Per Hoober the top corners are red-zone; only "where am I" + the
+   single emergency-exit (refresh) lives here.
+   ============================================================ */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(10px + var(--safe-top)) 16px 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  /* Belt to the `minmax(0, 1fr)` suspenders — explicit min-width: 0
+     so this grid item can shrink below its children's min-content
+     (the nowrap h1 title, particularly). */
+  min-width: 0;
+}
+
+.brand-accent { color: var(--accent); }
+
+.header__back {
+  width: var(--tap-min);
+  height: var(--tap-min);
+  flex-shrink: 0;
+  color: var(--text-primary);
+}
+
+.header__titleblock {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.header__title {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* min-width: 0 lets the h1 shrink below its intrinsic content width
+     in its flex column parent. Without this, a long video title forces
+     the h1 to its `nowrap` content width, which expands titleblock
+     past its flex allocation and pushes the whole header (and #app)
+     wider than the viewport — that's what was dragging the nav-tabs
+     off the right edge for videos with long names. */
+  min-width: 0;
+  max-width: 100%;
+}
+
+.header__count {
+  font-size: 12px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.header__action {
+  width: var(--tap-min);
+  height: var(--tap-min);
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+
+.header__action--spinning { animation: spin 0.6s linear; }
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ============================================================
+   Breadcrumb — persistent "where am I" feedback (Nielsen #1).
+   Inline below the title; horizontal-scroll on overflow.
+   ============================================================ */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  margin: 0;
+}
+.breadcrumb::-webkit-scrollbar { display: none; }
+
+.breadcrumb__item {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: color 120ms;
+}
+.breadcrumb__item:hover { color: var(--text-primary); }
+.breadcrumb__item--current {
+  color: var(--text-primary);
+  cursor: default;
+}
+.breadcrumb__sep {
+  color: rgba(255, 255, 255, 0.2);
+  user-select: none;
+}
+
+/* ============================================================
+   Toolbar — search + filter chips + content-action bar.
+   Wrapped so the player view can hide it all in one toggle.
+   ============================================================ */
+.toolbar {
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  /* Sticky child of `.main` (the scroll container). At scrollTop=0 the
+     toolbar takes up its normal-flow space; once content scrolls past,
+     the toolbar pins to the top of the scroll viewport and overlays the
+     content underneath. That overlay is what makes the scroll-tracked
+     transform work cleanly: shifting the toolbar up reveals the content
+     it was covering — no empty strip. Twitter / Reddit / Medium use
+     this same pattern. */
+  position: sticky;
+  top: 0;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px 8px;
+  /* JS drives `transform: translateY(<n>px)` directly on every scroll
+     frame, 1:1 with the user's finger motion. A CSS transition would
+     cause the toolbar to lag behind the scroll position; we want
+     instant follow. The compositor hint stays so the browser keeps
+     this layer on the GPU. */
+  will-change: transform;
+}
+.toolbar--hidden { display: none; }
+
+/* Persistent search bar — same component on every mode (Shneiderman #1). */
+.search-bar {
+  position: relative;
+}
+.search-bar__icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+  display: inline-flex;
+  pointer-events: none;
+}
+.search-bar__input {
+  width: 100%;
+  height: var(--tap-min);
+  padding: 0 var(--tap-min) 0 38px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 15px;
+  font-family: inherit;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: border-color 120ms;
+}
+.search-bar__input:focus { border-color: var(--accent); }
+.search-bar__clear {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  border: none;
+}
+
+/* Active-filter chips. Hidden via [hidden] when empty so the row
+   collapses (Nielsen #8 minimalist). Each chip carries an X to
+   remove that filter individually (Shneiderman #6). */
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 4px 10px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  height: 30px;
+  transition: background 120ms;
+}
+.filter-chip:hover { background: rgba(233, 69, 96, 0.22); }
+.filter-chip__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+/* Content-action bar: sort / view / folder / filters.
+   Each button has icon + (sometimes) label. The filters button
+   carries a count-badge. */
+.content-actions {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+.content-actions__btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 0 12px;
+  height: 38px;
+  min-width: var(--tap-min);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.content-actions__btn:hover { color: var(--text-primary); border-color: rgba(255,255,255,0.16); }
+.content-actions__btn:active { background: var(--bg-card-hover); }
+.content-actions__btn[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.content-actions__btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.content-actions__icon { display: inline-flex; line-height: 0; }
+.content-actions__label { font-size: 13px; }
+
+.content-actions__btn--filters {
+  margin-left: auto; /* push filters to the right edge */
+}
+
+/* Hide the content-actions row in views where sort/filter don't apply
+   (currently the grouping-list view — collections/playlists/categories
+   index pages). Search stays visible above. */
+.content-actions--hidden { display: none; }
+
+.content-actions__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   Main content scroll area
+   ============================================================ */
+.main {
+  overflow-y: auto;
+  /* Safety net so no view can ever push the page wider than the
+     viewport. If a long unbreakable string slips through, it gets
+     clipped instead of forcing a horizontal scroll on the whole
+     remote. The targeted fixes (overflow-wrap on title / meta /
+     sync-pill, flex-wrap on meta) prevent the overflow at its
+     source — this is the belt to those suspenders. */
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  /* Just breathing room at the end of the scroll. Nav-tabs sits in
+     the next grid row (in flow), so we don't need to clear a fixed
+     bar's height anymore. */
+  padding-bottom: 16px;
+  min-height: 0; /* lets the grid row collapse properly */
+  /* Stop scroll chaining at the boundary — without this, momentum from
+     a fast flick can bleed into a body-level rubber-band overscroll on
+     iOS, briefly exposing the document background as a flash on the
+     edges. */
+  overscroll-behavior: contain;
+}
+/* Hide the scrollbar on the scroll container. The standard properties
+   (`scrollbar-width: none`) and the WebKit pseudo-element form work in
+   Chrome / Safari / Firefox, but DuckDuckGo Android's WebView has been
+   reported (issue #170) to ignore both and render its own system
+   scrollbar regardless. The transparent `scrollbar-color` covers that
+   case — even if the bar is still drawn, it's invisible. */
+.main {
+  scrollbar-width: none;
+  scrollbar-color: transparent transparent;
+  -ms-overflow-style: none;
+}
+.main::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+  -webkit-appearance: none;
+  background: transparent;
+}
+.main::-webkit-scrollbar-thumb,
+.main::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ============================================================
+   Bottom navigation (mobile/tablet) → left rail (desktop ≥1024px).
+   Mode switching = most frequent action = lives in the easy-reach
+   green zone (Hoober).
+   ============================================================ */
+.nav-tabs {
+  /* In-flow grid row 3 of #app on mobile (becomes a left rail on
+     desktop). Position-fixed was wrong on iOS Safari: `position: fixed`
+     anchors to the LAYOUT viewport, but iOS chrome animations change
+     the VISUAL viewport. The mismatch produced a grey strip below the
+     nav whenever chrome retracted. In-flow placement ties the nav to
+     #app's height — which is dynamic via `--app-vh` — so the nav
+     always sits flush against the visible viewport bottom. */
+  /* Grid (not flex) so the four tabs are always exactly 1/4 of the
+     container width. Flex with `flex: 1` was the prior choice but
+     flex items default to `min-width: auto`, which prevents them
+     from shrinking below their intrinsic content width — at narrow
+     viewports the four labels (Library / Collections / Playlists /
+     Categories) summed to ~280 px of min-content and pushed the nav
+     wider than the viewport, dragging Playlists + Categories off the
+     right edge. `minmax(0, 1fr)` is the grid equivalent of `flex: 1
+     + min-width: 0` and just works. */
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  padding-bottom: var(--safe-bottom);
+  z-index: 8;
+}
+
+.nav-tabs__tab {
+  /* No `flex: 1` needed — the parent is `display: grid` with equal
+     fr columns on mobile. On desktop the parent switches back to
+     flex-column (rail) and `flex: 0 0 auto` is correct there too. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 8px 4px;
+  height: var(--nav-height);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  transition: color 150ms;
+  -webkit-tap-highlight-color: transparent;
+  /* min-width: 0 so the tab itself can shrink below its intrinsic
+     label width (belt to the grid suspenders above). The label gets
+     ellipsis so it doesn't overflow visibly. */
+  min-width: 0;
+  overflow: hidden;
+}
+.nav-tabs__tab:hover { color: var(--text-primary); }
+.nav-tabs__tab[aria-selected="true"] { color: var(--accent); }
+.nav-tabs__tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.nav-tabs__icon {
+  display: inline-flex;
+  line-height: 0;
+}
+.nav-tabs__icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.nav-tabs__label {
+  font-size: 11px;
+  letter-spacing: 0.1px;
+  /* Truncate long labels (Categories, Collections) on very narrow
+     viewports instead of pushing the tab wider than its grid column. */
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============================================================
+   Bottom-sheet modal (Filters / Sort).
+   Mobile: bottom sheet sliding up.
+   Tablet (≥600px): right-side drawer.
+   Desktop (≥1024px): centred dialog.
+   ============================================================ */
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.sheet__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  animation: backdrop-fade-in 200ms ease-out;
+}
+@keyframes backdrop-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.sheet__panel {
+  position: relative;
+  background: var(--bg-secondary);
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  border-top: 1px solid var(--border);
+  max-height: 75vh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: var(--safe-bottom);
+  animation: sheet-slide-up 220ms ease-out;
+}
+@keyframes sheet-slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+.sheet__handle {
+  width: 36px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 2px;
+  margin: 8px auto 0;
+  flex-shrink: 0;
+}
+
+.sheet__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px 8px;
+  flex-shrink: 0;
+}
+
+.sheet__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sheet__close {
+  width: var(--tap-min);
+  height: var(--tap-min);
+}
+
+.sheet__body {
+  overflow-y: auto;
+  padding: 8px 16px 16px;
+}
+
+.sheet__group {
+  margin-bottom: 18px;
+}
+.sheet__group:last-child { margin-bottom: 0; }
+
+.sheet__group-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 8px;
+}
+
+.sheet__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* "Single" variant for sort — vertical radio list, more readable for
+   long option text. */
+.sheet__options--single {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0;
+}
+
+.sheet__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-secondary);
+  min-height: var(--tap-min);
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+.sheet__options--single .sheet__option {
+  border-radius: 0;
+  border-bottom: none;
+}
+.sheet__options--single .sheet__option:first-child { border-top-left-radius: 10px; border-top-right-radius: 10px; }
+.sheet__options--single .sheet__option:last-child  { border-bottom: 1px solid var(--border); border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; }
+
+.sheet__option:hover { color: var(--text-primary); }
+.sheet__option:has(input:checked) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sheet__option input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+/* Pill-style flex-wrap variant for tab/vr — small option counts. */
+.sheet__options:not(.sheet__options--single) .sheet__option {
+  flex: 0 1 auto;
+  border-radius: 999px;
+  padding: 8px 14px;
+}
+
+/* ============================================================
+   List view — preserved from prior design (only padding tweak)
+   ============================================================ */
+.list { padding: 8px 0; }
+
+.list__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  min-height: 60px;
+  transition: background 120ms;
+}
+.list__row:active { background: var(--bg-card-hover); }
+.list__row:hover  { background: var(--control-hover); }
+
+.list__thumb {
+  width: 112px;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 6px;
+  flex-shrink: 0;
+  object-fit: cover;
+  overflow: hidden;
+}
+.list__thumb--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 24px;
+}
+
+.list__info { flex: 1; min-width: 0; }
+.list__title {
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+.list__sub {
+  font-size: 12px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Wrap so a long source name + duration + badge can stack on
+     narrow viewports instead of forcing the row wider. */
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+.list__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ============================================================
+   Empty / loading
+   ============================================================ */
+.empty {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-dim);
+}
+.empty__title { font-size: 16px; margin-bottom: 6px; color: var(--text); }
+
+.loading {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+/* ============================================================
+   Skeletons (§3.4.1a) — shape-matched placeholders that prevent
+   layout reflow when real data arrives. Diagonal shimmer driven by
+   `transform`, GPU-friendly, disabled under prefers-reduced-motion.
+   ============================================================ */
+.skeleton {
+  pointer-events: none;
+  user-select: none;
+}
+
+.skeleton__plate,
+.skeleton__line {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+
+/* Unified-sweep model (2026-08-04, ported from the desktop's settled
+   skeleton — matsimon.dev reference): `background-attachment: fixed` puts
+   every plate's gradient in the VIEWPORT coordinate space, so ONE stripe
+   sweeps across all skeletons as a single cohesive pass instead of each
+   element looping its own copy in lockstep. */
+.skeleton__plate::after,
+.skeleton__line::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+    100deg,
+    transparent 40%,
+    rgba(255, 255, 255, 0.06) 50%,
+    transparent 60%
+  );
+  background-size: 200vw 100%;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  animation: skeleton-shimmer 1.6s infinite linear;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position-x: 200%; }
+  100% { background-position-x: 0%; }
+}
+
+.skeleton__line {
+  height: 12px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+.skeleton__line:last-child { margin-bottom: 0; }
+.skeleton__line--small  { height: 10px; }
+.skeleton__line--40 { width: 40%; }
+.skeleton__line--60 { width: 60%; }
+.skeleton__line--70 { width: 70%; }
+.skeleton__line--80 { width: 80%; }
+.skeleton__line--85 { width: 85%; }
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton__plate::after,
+  .skeleton__line::after,
+  .header__action--spinning,
+  .sheet__panel,
+  .sheet__backdrop {
+    animation: none !important;
+  }
+}
+
+/* ============================================================
+   Grouping list — preserved
+   ============================================================ */
+.grouping-list { padding: 8px 0; }
+
+.grouping-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  min-height: 60px;
+  transition: background 120ms;
+}
+.grouping-row:hover  { background: var(--control-hover); }
+.grouping-row:active { background: var(--bg-card-hover); }
+
+.grouping-row__badge {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+.grouping-row__badge--dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: none;
+  margin: 0 9px;
+}
+
+.grouping-row__info { flex: 1; min-width: 0; }
+.grouping-row__name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+.grouping-row__sub {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.grouping-row__chev {
+  color: var(--text-dim);
+  font-size: 22px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   Folder breadcrumb / jump — preserved from prior design
+   ============================================================ */
+.folder-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 16px 6px;
+  font-size: 13px;
+  overflow-x: auto;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--border);
+}
+.folder-breadcrumb::-webkit-scrollbar { display: none; }
+
+.folder-breadcrumb__item {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: background 120ms, color 120ms;
+}
+.folder-breadcrumb__item:hover { color: var(--text-primary); background: var(--control-hover); }
+.folder-breadcrumb__item--current {
+  color: var(--text-primary);
+  font-weight: 600;
+  cursor: default;
+}
+.folder-breadcrumb__item--current:hover { background: none; }
+
+.folder-breadcrumb__sep {
+  color: var(--text-dim);
+  font-size: 14px;
+  user-select: none;
+}
+
+.folder-jump {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  min-height: var(--tap-min);
+  transition: background 120ms, color 120ms;
+}
+.folder-jump:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+
+.folder-jump__icon {
+  display: inline-flex;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.folder-jump__label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.folder-jump__label strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.folder-jump__chev {
+  color: var(--text-dim);
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   Card grid — preserved (palette, radii, badges all unchanged)
+   ============================================================ */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  /* nav-height + safe-bottom were here when nav-tabs was position-fixed
+     and overlaid this content; with in-flow nav-tabs, they're no longer
+     needed (nav-tabs has its own safe-bottom padding below). */
+  padding: 10px 12px 14px;
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  transition: background 150ms, border-color 150ms, transform 150ms;
+}
+.card:hover { border-color: rgba(255,255,255,0.14); }
+.card:active {
+  background: var(--bg-card-hover);
+  transform: scale(0.98);
+}
+
+.card__thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  position: relative;
+  display: block;
+  object-fit: cover;
+}
+.card__thumb--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 28px;
+}
+.card__thumb-dur {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.card__body {
+  padding: 8px 10px 10px;
+  min-height: 0;
+}
+.card__title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.3;
+}
+.card__meta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.card__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.card__badge--vr           { background: rgba(120, 180, 255, 0.12); color: #82b4ff; }
+.card__badge--speed-slow   { background: rgba(120,180,255,0.12); color: #82b4ff; }
+.card__badge--speed-medium { background: rgba(0,200,180,0.12);   color: #4ecdc4; }
+.card__badge--speed-fast   { background: rgba(255,190,80,0.14);  color: #ffc15a; }
+.card__badge--speed-extreme{ background: rgba(255,130,60,0.14);  color: #ff925c; }
+.card__badge--speed-insane { background: rgba(255,70,90,0.14);   color: #ff5c74; }
+
+.card__badge--speed-slow,
+.card__badge--speed-medium,
+.card__badge--speed-fast,
+.card__badge--speed-extreme,
+.card__badge--speed-insane { gap: 3px; }
+
+.card__badge-text {
+  font-variant-numeric: tabular-nums;
+  font-size: 9px;
+  letter-spacing: 0;
+}
+
+/* ============================================================
+   Player view
+   ============================================================ */
+.player {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  /* min-width: 0 lets flex children shrink below their intrinsic
+     content size — prevents a long unbreakable filename or device
+     name in a child from forcing the whole player wider than the
+     viewport. */
+  min-width: 0;
+}
+
+.player__video {
+  width: 100%;
+  /* max-width prevents a programmatic `videoEl.width = …` set or any
+     other sizing pass from making the element wider than its column. */
+  max-width: 100%;
+  background: #000;
+  /* 16:9 in portrait gives a sensible default frame; non-16:9 sources
+     (4:3, 21:9, vertical, VR equirectangular) letterbox/pillarbox via
+     the video element's default `object-fit: contain` — preview-grade,
+     no distortion. The landscape media query at the bottom of this
+     file switches to `aspect-ratio: auto` + `height: 60vh` so a wide
+     orientation can use the natural source aspect. */
+  aspect-ratio: 16 / 9;
+  display: block;
+}
+
+/* Positioned ancestor for the loading overlay. Sits flush around the
+   <video> so the overlay covers the frame and not the whole player. */
+.player__video-wrap {
+  position: relative;
+  width: 100%;
+}
+.player__loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 10;
+  /* Block taps to the video controls underneath while loading. */
+  pointer-events: auto;
+}
+.player__loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: player__spin 0.8s linear infinite;
+}
+.player__loading-text {
+  font-size: 14px;
+  color: #fff;
+  font-weight: 500;
+}
+@keyframes player__spin {
+  to { transform: rotate(360deg); }
+}
+/* Buffering indicator: spinner only, no dim, no text — it must not block
+   the controls (a stalled seek is exactly when users retarget the seek
+   bar), unlike the variant-switch overlay above which blocks on purpose. */
+.player__buffer-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 9;
+  pointer-events: none;
+}
+
+/* Escape hatch back to the browser's own player. Understated on purpose —
+   it should be findable when the custom controls misbehave, not compete
+   with them the rest of the time. */
+.player__controls-toggle {
+  display: block;
+  margin: 10px auto 0;
+  padding: 8px 14px;
+  min-height: 40px;
+  border: 1px solid var(--border, rgba(255,255,255,0.18));
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary, rgba(255,255,255,0.65));
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.player__controls-toggle:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.player__sync-pill {
+  margin: 10px 16px 0;
+  padding: 8px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-align: center;
+  transition: background 150ms, border-color 150ms, color 150ms;
+  /* Wrap long unbreakable status text (device names without spaces)
+     instead of letting them push the pill wider than the column. */
+  overflow-wrap: anywhere;
+}
+.player__sync-pill[data-state="ready"],
+.player__sync-pill[data-state="connected"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.player__sync-pill[data-state="kicked"],
+.player__sync-pill[data-state="nomatch"] {
+  background: rgba(244, 67, 54, 0.08);
+  border-color: rgba(244, 67, 54, 0.4);
+  color: #f66;
+}
+.player__sync-pill--expandable { cursor: pointer; user-select: none; text-align: left; }
+.player__sync-pill--open { border-radius: 14px; }
+.player__sync-pill-summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.player__sync-pill-chev {
+  font-size: 10px;
+  opacity: 0.7;
+}
+.player__sync-pill-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 4px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.player__sync-pill-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 2px;
+  font-size: 12px;
+}
+.player__sync-pill-item-name {
+  flex: 1;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.player__sync-pill-item-kind {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  opacity: 0.6;
+  font-weight: 600;
+}
+
+.player__heatmap-wrapper { padding: 12px 16px 0; }
+.player__heatmap-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  /* `min-width: 0` so flex children can shrink below their intrinsic
+     content widths — keeps the variant chip from pushing the heatmap
+     wrapper wider than its viewport allocation on narrow screens. */
+  min-width: 0;
+}
+.player__heatmap-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  /* Take whatever room the chip leaves; truncate if needed rather
+     than push the chip off the right edge. */
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* No bottom margin here — header gap handles spacing now. */
+  margin-bottom: 0;
+}
+
+/* Variant chip — sits at the right of the heatmap header. Tap to
+   expand a list of variants below the heatmap. Padding + font-size
+   match the sync pill above so the two read as the same component
+   family on the same player surface (Nielsen #4 — same shape, same
+   role). The sync pill doesn't enforce the full 44 px tap floor
+   either; matching it here keeps the visual rhythm consistent. */
+.player__variant-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+  max-width: 60%;
+  transition: background 120ms, border-color 120ms;
+}
+.player__variant-chip:hover { background: var(--bg-card-hover); }
+.player__variant-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.player__variant-chip--open {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.player__variant-chip-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.player__variant-chip-chev {
+  display: inline-flex;
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: transform 150ms ease;
+}
+.player__variant-chip--open .player__variant-chip-chev {
+  transform: rotate(180deg);
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .player__variant-chip-chev { transition: none; }
+}
+
+/* Expanded list of variants. Mirrors the filter-sheet `radiogroup`
+   pattern (`.sheet__option` + `<input type="radio">`) so "pick one of
+   N" looks and behaves identically wherever it appears in the remote
+   (Shneiderman #1, DESIGN.md §1.2 — same actions for same situations).
+   The mini heatmap inside each row is the variant-specific addition,
+   slotted into a third grid column. */
+.player__variant-list {
+  margin: 8px 0 0;
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.player__variant-row {
+  display: grid;
+  grid-template-columns: 18px 1fr minmax(0, 110px);
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-secondary);
+  min-height: var(--tap-min);
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+.player__variant-row:hover { color: var(--text-primary); }
+/* `:has(input:checked)` is the same selector the filter sheet uses
+   for active state — keeps the visual cue identical across the two
+   surfaces. */
+.player__variant-row:has(input:checked) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.player__variant-row:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.player__variant-row--pending {
+  opacity: 0.65;
+}
+.player__variant-row-input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  margin: 0;
+}
+.player__variant-row-label {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.player__variant-row-preview {
+  width: 100%;
+  height: 22px;
+  display: block;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.04);
+  /* Inherits the row's `color` so the active row's preview is accent
+     and inactive rows are muted. The canvas bakes color at render time,
+     so `applyActiveVariant` re-renders previews on every active-row
+     change to pick up the new `currentColor`. */
+  color: currentColor;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .player__variant-chip,
+  .player__variant-row { transition: none; }
+}
+.player__heatmap {
+  width: 100%;
+  height: 32px;
+  display: block;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--accent);
+}
+.player__title {
+  padding: 14px 16px 4px;
+  font-size: 16px;
+  font-weight: 600;
+  /* Long filenames frequently have no spaces (`Some_Really_Long_File_
+     Name.mp4`). Without this they'd force the whole player wider than
+     the viewport. `anywhere` is permissive — the browser breaks at any
+     character if no better break point exists. */
+  overflow-wrap: anywhere;
+}
+.player__meta {
+  padding: 0 16px 16px;
+  font-size: 12px;
+  color: var(--text-dim);
+  display: flex;
+  gap: 10px;
+  /* Source names (folder paths, e.g.) can be long. Wrap onto a second
+     line on narrow screens instead of overflowing. */
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+.player__speed {
+  padding: 0 16px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+.player__speed-badge { padding: 3px 8px; font-size: 11px; }
+.player__speed-stat strong {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin: 0 2px;
+}
+.player__speed-unit { color: var(--text-dim); font-size: 10px; }
+
+/* ============================================================
+   Responsive breakpoints
+   ============================================================ */
+
+/* Tablet: more horizontal room — wider gutters, 3-col grid. */
+@media (min-width: 600px) {
+  .header { padding-left: 24px; padding-right: 24px; }
+  .toolbar { padding-left: 24px; padding-right: 24px; }
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    padding: 14px 24px 18px;
+    gap: 14px;
+  }
+
+  /* Sheet becomes a right-side drawer instead of a bottom sheet —
+     same component, different motion. */
+  .sheet { justify-content: flex-end; align-items: stretch; flex-direction: row; }
+  .sheet__panel {
+    max-height: none;
+    height: 100%;
+    width: 380px;
+    border-radius: 0;
+    border-top: none;
+    border-left: 1px solid var(--border);
+    animation: sheet-slide-left 220ms ease-out;
+  }
+  .sheet__handle { display: none; }
+  @keyframes sheet-slide-left {
+    from { transform: translateX(100%); }
+    to   { transform: translateX(0); }
+  }
+}
+
+/* Desktop: bottom-nav becomes a left rail. Centred max-width content
+   so 4K screens don't stretch a single row of cards across 3000px. */
+@media (min-width: 1024px) {
+  /* App grid becomes 2 columns: rail | content stack. The content
+     column is `minmax(0, 1fr)` for the same reason as the mobile
+     grid — long titles with `nowrap` would otherwise expand the
+     column past viewport width. */
+  #app {
+    grid-template-columns: var(--rail-width) minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+
+  /* Header + main span the right column. Toolbar lives inside main
+     (sticky child) so it doesn't need its own grid placement. */
+  .header   { grid-column: 2; }
+  .main     { grid-column: 2; }
+
+  /* Nav-tabs: left rail spanning all rows on the left. Switch back to
+     flex (vertical stack) — the mobile grid-of-4-columns rule doesn't
+     apply here. */
+  .nav-tabs {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    position: relative;
+    bottom: auto;
+    left: auto;
+    right: auto;
+    display: flex;
+    flex-direction: column;
+    grid-template-columns: none;
+    align-items: stretch;
+    justify-content: flex-start;
+    padding: calc(20px + var(--safe-top)) 12px 20px;
+    border-top: none;
+    border-right: 1px solid var(--border);
+    background: var(--bg-secondary);
+    gap: 4px;
+    height: auto;
+  }
+
+  .nav-tabs__tab {
+    flex: 0 0 auto;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    height: auto;
+    padding: 12px 14px;
+    border-radius: 8px;
+    text-align: left;
+    font-size: 14px;
+  }
+  .nav-tabs__tab[aria-selected="true"] {
+    background: var(--accent-soft);
+  }
+  .nav-tabs__icon svg { width: 20px; height: 20px; }
+  .nav-tabs__label { font-size: 14px; font-weight: 500; }
+
+  /* Main no longer needs bottom-nav clearance. */
+  .main { padding-bottom: calc(24px + var(--safe-bottom)); }
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    padding: 18px 32px calc(24px + var(--safe-bottom));
+    gap: 16px;
+    max-width: 1400px;
+  }
+
+  .header { padding-left: 32px; padding-right: 32px; }
+  .toolbar { padding-left: 32px; padding-right: 32px; }
+
+  /* Sheet stays a right-side drawer at desktop too — keeps the user's
+     mouse on the right edge for filter actions. */
+}
+
+/* Landscape phone — keep the chrome compact when video plays. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .header { padding-top: 6px; padding-bottom: 6px; }
+  .player__video { aspect-ratio: auto; height: 60vh; }
+}
+
+/* ========================================================================
+ * MODERN interface layer (web remote)
+ * ========================================================================
+ * Gated on <html data-style="modern"> (always set — the web remote ships
+ * Modern to everyone, decision A of SCOPE-modern-theme.md). Same visual
+ * language as the desktop Modern style: real elevation + a lit top edge,
+ * softer/consistent corners, soft accent focus rings, and press feedback —
+ * all from the EXISTING palette. 44px tap targets + safe-area insets are
+ * preserved. Flipping the html attribute to "classic" reverts to the
+ * previous flat look with zero other changes.
+ * ==================================================================== */
+
+/* --- Shared soft focus ring (replaces hard 2px outlines) ----------------- */
+:root[data-style="modern"] .icon-btn:focus-visible,
+:root[data-style="modern"] .content-actions__btn:focus-visible,
+:root[data-style="modern"] .search-bar__input:focus-visible,
+:root[data-style="modern"] .nav-tabs__tab:focus-visible,
+:root[data-style="modern"] .sheet__option:focus-within,
+:root[data-style="modern"] .sheet__close:focus-visible,
+:root[data-style="modern"] .header__action:focus-visible,
+:root[data-style="modern"] .header__back:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.35);
+}
+
+/* --- Library cards: first real shadows here — depth + lit edge + lift ----- */
+:root[data-style="modern"] .card {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-1), var(--edge-highlight);
+  transition: background var(--dur-1) var(--ease-out),
+              border-color var(--dur-1) var(--ease-out),
+              box-shadow var(--dur-1) var(--ease-out),
+              transform var(--dur-1) var(--ease-out);
+}
+:root[data-style="modern"] .card__thumb {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+/* Hover-lift only on real pointers so touch doesn't get sticky hover. */
+@media (hover: hover) {
+  :root[data-style="modern"] .card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--elev-2), var(--edge-highlight);
+  }
+  :root[data-style="modern"] .grouping-row:hover,
+  :root[data-style="modern"] .list__row:hover {
+    transform: translateX(2px);
+  }
+}
+
+/* --- List / grouping rows + thumbs --------------------------------------- */
+:root[data-style="modern"] .list__row,
+:root[data-style="modern"] .grouping-row {
+  transition: background var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+}
+:root[data-style="modern"] .list__thumb {
+  border-radius: var(--radius-md);
+}
+
+/* --- Sticky chrome: hairline elevation so it separates from scroll ------- */
+:root[data-style="modern"] .header,
+:root[data-style="modern"] .toolbar {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+}
+
+/* --- Search + action buttons + icon buttons ------------------------------ */
+:root[data-style="modern"] .search-bar__input {
+  border-radius: var(--radius-md);
+  transition: border-color var(--dur-1) var(--ease-out), box-shadow var(--dur-1) var(--ease-out);
+}
+:root[data-style="modern"] .search-bar__input:focus {
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.28);
+}
+:root[data-style="modern"] .content-actions__btn,
+:root[data-style="modern"] .icon-btn {
+  border-radius: var(--radius-md);
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1),
+              border-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+}
+:root[data-style="modern"] .content-actions__btn:active,
+:root[data-style="modern"] .icon-btn:active {
+  transform: scale(0.94);
+}
+:root[data-style="modern"] .filter-chip:active {
+  transform: scale(0.96);
+}
+
+/* --- Nav tabs / rail: rounder selected surface + accent glow -------------- */
+:root[data-style="modern"] .nav-tabs__tab {
+  transition: color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out);
+}
+:root[data-style="modern"] .nav-tabs__tab[aria-selected="true"] .nav-tabs__icon {
+  filter: drop-shadow(0 0 6px rgba(var(--accent-rgb), 0.55));
+}
+
+/* --- Bottom sheet / drawer: elevation + lit edge + rounder options -------- */
+:root[data-style="modern"] .sheet__panel {
+  box-shadow: var(--elev-3), var(--edge-highlight);
+}
+:root[data-style="modern"] .sheet__option {
+  border-radius: var(--radius-md);
+  transition: background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
+}
+/* The single-select variant hard-set border-radius:0 — round it back. */
+:root[data-style="modern"] .sheet__options--single .sheet__option {
+  border-radius: var(--radius-md);
+}
+
+/* --- Player: sync pill / variant chip depth + heatmap radius -------------- */
+:root[data-style="modern"] .player__sync-pill,
+:root[data-style="modern"] .player__variant-chip {
+  box-shadow: var(--elev-1);
+  transition: background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out),
+              box-shadow var(--dur-1) var(--ease-out);
+}
+:root[data-style="modern"] .player__variant-chip:active {
+  transform: scale(0.97);
+}
+:root[data-style="modern"] .player__heatmap {
+  border-radius: var(--radius-md);
+}
+
+/* --- Skeletons: align corner radius to the new scale --------------------- */
+:root[data-style="modern"] .skeleton__line {
+  border-radius: var(--radius-sm);
+}
+
+/* Reduced-motion — drop the transforms this layer adds. */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-style="modern"] .card,
+  :root[data-style="modern"] .list__row,
+  :root[data-style="modern"] .grouping-row,
+  :root[data-style="modern"] .content-actions__btn,
+  :root[data-style="modern"] .icon-btn,
+  :root[data-style="modern"] .filter-chip,
+  :root[data-style="modern"] .player__variant-chip {
+    transition: none;
+  }
+  :root[data-style="modern"] .card:hover,
+  :root[data-style="modern"] .list__row:hover,
+  :root[data-style="modern"] .grouping-row:hover,
+  :root[data-style="modern"] .content-actions__btn:active,
+  :root[data-style="modern"] .icon-btn:active,
+  :root[data-style="modern"] .filter-chip:active,
+  :root[data-style="modern"] .player__variant-chip:active {
+    transform: none;
+  }
+}
+
+/* ============================================================
+   Glass chrome (V2, 2026-08-04) — the sticky header, toolbar, and
+   bottom nav become translucent frosted surfaces (the standard
+   premium-mobile treatment). Small fixed strips only — cheap to
+   composite, unlike per-card blur. Opaque fallback where
+   backdrop-filter is unsupported (the base rules above keep their
+   solid var(--bg), so this layer only upgrades). Scrolled content
+   ghosting through the blur is the point.
+   ============================================================ */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .header,
+  .toolbar,
+  .nav-tabs {
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(14px) saturate(1.15);
+    backdrop-filter: blur(14px) saturate(1.15);
+  }
+}
+
+/* ============================================================
+   Content reveal (V3, 2026-08-04) — thumbnails settle in on load,
+   matching the desktop grid. `.thumb-reveal` is added by wireThumb
+   ONLY when the image actually loads over the network (cached
+   re-renders skip it — same lesson as the desktop scroll rebuilds).
+   ============================================================ */
+.thumb-reveal {
+  animation: thumb-reveal-in 240ms ease;
+}
+
+@keyframes thumb-reveal-in {
+  from { opacity: 0; transform: scale(1.02); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thumb-reveal { animation: none; transform: none; }
+}
+
+/* ============================================================
+   Custom player controls (V4) + orgasm button (F2) + offset
+   sliders (F4) + gap chip (F6) — SCOPE-web-remote-2.md.
+   ============================================================ */
+.player__video-wrap { position: relative; }
+
+/* Pseudo-fullscreen (iOS path): fixed wrapper, custom controls survive. */
+.player__video-wrap--fs {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.player__video-wrap--fs .player__video {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: contain;
+}
+html.pfs-lock, html.pfs-lock body { overflow: hidden; }
+
+.pcx {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--dur-2) var(--ease-out);
+  pointer-events: none;
+}
+.pcx--visible { opacity: 1; }
+.pcx--visible .pcx__center,
+.pcx--visible .pcx__bar,
+.pcx--visible .pcx__gap-chip { pointer-events: auto; }
+
+/* No filled disc behind the glyph (Dave 2026-08-04: "the play pause button
+   transparent background shows up when you tap to see the seekbar"). The tap
+   target stays 64px, the icon just floats on the video with a shadow for
+   contrast instead of sitting on a translucent blob. */
+.pcx__center {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: none;
+  background: none;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7));
+  cursor: pointer;
+}
+.pcx__center:active { transform: scale(0.94); }
+
+/* Two rows: seek gets the full width, buttons sit under it. A single row put
+   212px of non-shrinkable children (44px tap targets + two time labels) next
+   to the seek bar, leaving it ~118px on a 390px phone. */
+.pcx__bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 22px 10px 6px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.72), transparent);
+}
+.pcx__seekrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pcx__btnrow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+/* Pushes fullscreen to the far right, away from play/mute. */
+.pcx__spacer { flex: 1; min-width: 0; }
+.pcx__btn {
+  background: none;
+  border: none;
+  color: #fff;
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.pcx__btn:active { color: var(--accent); }
+.pcx__btn--active { color: var(--accent); }
+.pcx__time {
+  font-size: 12px;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+  text-align: center;
+}
+.pcx__seek {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 0; /* generous vertical hit area */
+  cursor: pointer;
+  touch-action: none;
+}
+.pcx__seek-track {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.25);
+}
+.pcx__seek-buffered {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 0;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.35);
+}
+.pcx__seek-played {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 0;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.pcx__seek-thumb {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+.pcx__chapters { position: absolute; inset: 0; }
+.pcx__chapter-mark {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.8);
+  transform: translateX(-50%);
+  border-radius: 1px;
+}
+.pcx__gap-chip {
+  position: absolute;
+  right: 12px;
+  bottom: 64px;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 10px 16px;
+  background: rgba(26, 26, 46, 0.85);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: var(--elev-2);
+  cursor: pointer;
+}
+.pcx__gap-chip:active { color: var(--accent); }
+
+/* Orgasm Switch hold-pill (F2) — thumb-zone, unmistakable. */
+.player__orgasm-btn {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  min-height: 56px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  touch-action: none;          /* a hold must never start a scroll */
+  -webkit-user-select: none;
+  user-select: none;
+  transition: background var(--dur-1), color var(--dur-1), transform var(--dur-1);
+}
+.player__orgasm-btn:active { transform: scale(0.985); }
+.player__orgasm-btn--active {
+  background: var(--accent);
+  color: #fff;
+  animation: orgasm-pulse 1.1s ease-in-out infinite;
+}
+@keyframes orgasm-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.45); }
+  50% { box-shadow: 0 0 0 10px rgba(var(--accent-rgb), 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .player__orgasm-btn--active { animation: none; }
+}
+
+/* Offset sliders inside the sync-pill dropdown (F4). */
+.player__sync-pill-offset {
+  display: block;
+  padding: 6px 0 10px;
+}
+.player__sync-pill-offset-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.player__sync-pill-offset-value { font-variant-numeric: tabular-nums; }
+.player__sync-pill-offset-slider {
+  width: 100%;
+  accent-color: var(--accent);
+  min-height: 28px;
+}
+
+/* Play All / Shuffle bar on grouping detail (F1). */
+.playall-bar {
+  display: flex;
+  gap: 10px;
+  padding: 12px 16px 4px;
+}
+.playall-bar__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--tap-min);
+  padding: 0 20px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--elev-1), var(--edge-highlight);
+}
+.playall-bar__btn:active { transform: scale(0.97); }
+.playall-bar__btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Up Next overlay on the phone player (F1). */
+.up-next-phone {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 64px;
+  padding: 14px;
+  border-radius: var(--radius-lg);
+  background: rgba(26, 26, 46, 0.92);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--elev-3);
+  z-index: 5;
+}
+.up-next-phone__title {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.up-next-phone__name {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.up-next-phone__actions { display: flex; gap: 8px; }
+.up-next-phone__btn {
+  flex: 1;
+  min-height: var(--tap-min);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.up-next-phone__btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* ============================================================
+   Light theme (F5, 2026-08-04) — mirrors the desktop's saved theme
+   via /api/remote/locale (data-theme set pre-render in i18n.js).
+   Token flip mirrors the desktop light palette; component rules all
+   read tokens, so this covers the surface. Known first-pass gap
+   (flagged in SCOPE-web-remote-2.md): hardcoded white-alpha accents
+   (skeleton stripe, glass edges) read slightly muted in light —
+   palette QA pass welcome.
+   ============================================================ */
+:root[data-theme="light"] {
+  --bg-primary: #f5f5f7;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f0f0f4;
+  --text-primary: #24243a;
+  --text-secondary: #6b6b7a;
+  --control-hover: rgba(0, 0, 0, 0.06);
+  --border: rgba(0, 0, 0, 0.10);
+  --glass-bg: rgba(245, 245, 247, 0.78);
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.06);
+  --elev-2: 0 6px 18px rgba(0, 0, 0, 0.12);
+  --elev-3: 0 16px 40px rgba(0, 0, 0, 0.16);
+  --edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+:root[data-theme="light"] .skeleton__plate::after,
+:root[data-theme="light"] .skeleton__line::after {
+  background-image: linear-gradient(
+    100deg,
+    transparent 40%,
+    rgba(0, 0, 0, 0.05) 50%,
+    transparent 60%
+  );
+}
+
+/* Real fullscreen (non-iOS path): the WRAP is the fullscreen element —
+   without these rules it filled the screen while the video kept its
+   inline-page sizing (Dave's "video doesn't expand" report, 2026-08-04).
+   Mirrors the pseudo-fullscreen (--fs) treatment. */
+.player__video-wrap:fullscreen {
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.player__video-wrap:fullscreen .player__video {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  aspect-ratio: auto;
+  object-fit: contain;
+}
+
+/* Double-tap skip feedback (YouTube convention). */
+.pcx__skip-flash {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 10px 16px;
+  border-radius: var(--radius-pill);
+  background: rgba(26, 26, 46, 0.75);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  pointer-events: none;
+  animation: skip-flash-fade 0.5s ease forwards;
+}
+.pcx__skip-flash--left { left: 12%; }
+.pcx__skip-flash--right { right: 12%; }
+@keyframes skip-flash-fade {
+  0% { opacity: 0; transform: translateY(-50%) scale(0.9); }
+  25% { opacity: 1; transform: translateY(-50%) scale(1); }
+  100% { opacity: 0; transform: translateY(-50%) scale(1); }
+}
+
+/* Sort rows carry their own direction: the wording states it, the arrow
+   repeats it at a glance, and re-tapping the selected row flips both.
+   Mirrors the desktop picker. */
+.sheet__option--sort .sheet__option-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.sheet__option-arrow {
+  flex-shrink: 0;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-secondary);
+}
+
+/* The selected row is the only one that flips, so it gets the affordance. */
+.sheet__option--selected .sheet__option-arrow {
+  color: var(--accent);
+}

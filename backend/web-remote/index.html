@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en" data-style="modern">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="FunSync">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>FunSync Remote</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" type="image/png" sizes="256x256" href="./icons/icon-256.png">
+  <link rel="apple-touch-icon" href="./icons/icon-256.png">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- Header: back + title + count + refresh.
+         Per Hoober the top corners are red-zone; only "where am I" + the
+         single emergency-exit (refresh) lives here. Frequent actions
+         live in the content-action bar / bottom nav. -->
+    <header class="header">
+      <button class="header__back icon-btn" id="backBtn" aria-label="Back" data-i18n-aria-label="webRemote.header.back" hidden></button>
+      <div class="header__titleblock">
+        <h1 class="header__title" id="title"><span class="brand-accent">Fun</span>Sync</h1>
+        <nav class="breadcrumb" id="breadcrumb" aria-label="Location" data-i18n-aria-label="webRemote.header.locationAria" hidden></nav>
+      </div>
+      <span class="header__count" id="count" aria-live="polite"></span>
+      <button class="header__action icon-btn" id="refreshBtn" aria-label="Refresh library" data-i18n-aria-label="webRemote.header.refresh" title="Refresh library" data-i18n-title="webRemote.header.refresh"></button>
+    </header>
+
+    <!-- Main scroll area. The toolbar lives INSIDE this container as
+         a sticky child so the auto-hide-on-scroll behavior can use a
+         pure GPU-accelerated transform without triggering layout
+         reflow. Skeleton templates live at the end of body and are
+         cloned into `#mainContent` while content is loading. -->
+    <main id="main" class="main">
+
+      <!-- Toolbar: search + active-filter chips + content-action bar.
+           `position: sticky` (CSS) anchors it to the top of `.main`'s
+           viewport. Sliding it up via `transform: translateY(-100%)`
+           reveals the content that's scrolled-past underneath — same
+           pattern as Twitter / Reddit mobile / Medium. -->
+      <div class="toolbar" id="toolbar">
+
+        <!-- Persistent search. Placeholder updates per mode (Library /
+             Collections / Playlists / Categories) — Norman signifier. -->
+        <div class="search-bar">
+          <span class="search-bar__icon" id="searchIconSlot"></span>
+          <input type="search" id="searchInput" class="search-bar__input"
+                 placeholder="Search library" data-i18n-placeholder="webRemote.search.library"
+                 autocomplete="off" autocapitalize="none" autocorrect="off"
+                 inputmode="search" enterkeyhint="search" spellcheck="false"
+                 aria-label="Search" data-i18n-aria-label="webRemote.search.aria">
+          <button class="search-bar__clear icon-btn" id="searchClear" aria-label="Clear search" data-i18n-aria-label="webRemote.search.clear" hidden></button>
+        </div>
+
+        <!-- Active-filter chips (Nielsen #6 recognition; Shneiderman #6
+             reversibility). Hidden when no filters are active so the
+             toolbar collapses cleanly. -->
+        <div class="filter-chips" id="filterChips" role="region" aria-label="Active filters" data-i18n-aria-label="webRemote.filterChips.aria" hidden></div>
+
+        <!-- Content-action bar: sort / view / folder / filters.
+             Below the search to keep the search at the top of the
+             thumb-comfortable scroll zone; these less-frequent actions
+             sit a row down. The filters icon shows an active-count
+             badge so the user always knows how many filters are applied
+             (Nielsen #1 visibility of system status). -->
+        <div class="content-actions" id="contentActions">
+          <button class="content-actions__btn" id="sortBtn" aria-haspopup="dialog">
+            <span class="content-actions__icon" id="sortIconSlot"></span>
+            <span class="content-actions__label" data-i18n="webRemote.actions.sort">Sort</span>
+          </button>
+          <button class="content-actions__btn" id="viewToggle" aria-label="Toggle grid or list view" data-i18n-aria-label="webRemote.actions.viewToggleAria" title="Toggle grid / list" data-i18n-title="webRemote.actions.viewToggleTitle" aria-pressed="false">
+            <span class="content-actions__icon" id="viewIconSlot"></span>
+          </button>
+          <button class="content-actions__btn" id="folderToggle" aria-label="Browse by folder" data-i18n-aria-label="webRemote.actions.folderAria" title="Browse by folder" data-i18n-title="webRemote.actions.folderTitle" aria-pressed="false">
+            <span class="content-actions__icon" id="folderIconSlot"></span>
+          </button>
+          <button class="content-actions__btn content-actions__btn--filters" id="filtersBtn" aria-haspopup="dialog">
+            <span class="content-actions__icon" id="filtersIconSlot"></span>
+            <span class="content-actions__label" data-i18n="webRemote.actions.filters">Filters</span>
+            <span class="content-actions__badge" id="filtersBadge" aria-hidden="true" hidden></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Content wrapper. JS replaces this element's innerHTML/
+           appendChild — the toolbar sibling above stays untouched. -->
+      <div id="mainContent" class="main__content"></div>
+    </main>
+
+    <!-- Bottom nav (mobile / tablet) → left rail (≥1024px).
+         Mode-switching is the most frequent navigation and lives in
+         the easy-reach green zone (Hoober). Always-labelled (Nielsen #6
+         recognition over recall). -->
+    <nav class="nav-tabs" id="navTabs" role="tablist" aria-label="Modes" data-i18n-aria-label="webRemote.nav.modesAria">
+      <button class="nav-tabs__tab" data-mode="library" role="tab" aria-selected="true">
+        <span class="nav-tabs__icon" id="navLibraryIcon"></span>
+        <span class="nav-tabs__label" data-i18n="webRemote.nav.library">Library</span>
+      </button>
+      <button class="nav-tabs__tab" data-mode="collections" role="tab" aria-selected="false">
+        <span class="nav-tabs__icon" id="navCollectionsIcon"></span>
+        <span class="nav-tabs__label" data-i18n="webRemote.nav.collections">Collections</span>
+      </button>
+      <button class="nav-tabs__tab" data-mode="playlists" role="tab" aria-selected="false">
+        <span class="nav-tabs__icon" id="navPlaylistsIcon"></span>
+        <span class="nav-tabs__label" data-i18n="webRemote.nav.playlists">Playlists</span>
+      </button>
+      <button class="nav-tabs__tab" data-mode="categories" role="tab" aria-selected="false">
+        <span class="nav-tabs__icon" id="navCategoriesIcon"></span>
+        <span class="nav-tabs__label" data-i18n="webRemote.nav.categories">Categories</span>
+      </button>
+    </nav>
+
+    <!-- Filters sheet — bottom-sheet on phone, side drawer on tablet,
+         inline panel on desktop. Backdrop click + Escape close (Nielsen #3
+         user control). Focus trap when open (a11y). -->
+    <div class="sheet" id="filterSheet" role="dialog" aria-modal="true" aria-labelledby="filterSheetTitle" hidden>
+      <div class="sheet__backdrop" data-close-sheet></div>
+      <div class="sheet__panel" role="document">
+        <div class="sheet__handle" aria-hidden="true"></div>
+        <header class="sheet__header">
+          <h2 class="sheet__title" id="filterSheetTitle" data-i18n="webRemote.filterSheet.title">Filters</h2>
+          <button class="sheet__close icon-btn" data-close-sheet aria-label="Close filters" data-i18n-aria-label="webRemote.filterSheet.close"></button>
+        </header>
+        <div class="sheet__body">
+          <section class="sheet__group">
+            <h3 class="sheet__group-title" data-i18n="webRemote.filterSheet.matchHeader">Match status</h3>
+            <div class="sheet__options" role="radiogroup" aria-label="Match status" data-i18n-aria-label="webRemote.filterSheet.matchAria" data-filter="tab">
+              <label class="sheet__option"><input type="radio" name="tab" value="all"><span data-i18n="webRemote.filterSheet.matchAll">All</span></label>
+              <label class="sheet__option"><input type="radio" name="tab" value="matched"><span data-i18n="webRemote.filterSheet.matchMatched">Matched</span></label>
+              <label class="sheet__option"><input type="radio" name="tab" value="unmatched"><span data-i18n="webRemote.filterSheet.matchUnmatched">Unmatched</span></label>
+            </div>
+          </section>
+          <section class="sheet__group">
+            <h3 class="sheet__group-title" data-i18n="webRemote.filterSheet.vrHeader">VR</h3>
+            <div class="sheet__options" role="radiogroup" aria-label="VR filter" data-i18n-aria-label="webRemote.filterSheet.vrAria" data-filter="vr">
+              <label class="sheet__option"><input type="radio" name="vr" value="all"><span data-i18n="webRemote.filterSheet.vrAll">All</span></label>
+              <label class="sheet__option"><input type="radio" name="vr" value="vr"><span data-i18n="webRemote.filterSheet.vrOnly">VR only</span></label>
+              <label class="sheet__option"><input type="radio" name="vr" value="flat"><span data-i18n="webRemote.filterSheet.vrFlat">Non-VR</span></label>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sort sheet — same shell as filter sheet, different content.
+         Sort is conceptually distinct from filtering (doesn't reduce
+         results) so it gets its own surface — Norman conceptual model. -->
+    <div class="sheet" id="sortSheet" role="dialog" aria-modal="true" aria-labelledby="sortSheetTitle" hidden>
+      <div class="sheet__backdrop" data-close-sheet></div>
+      <div class="sheet__panel" role="document">
+        <div class="sheet__handle" aria-hidden="true"></div>
+        <header class="sheet__header">
+          <h2 class="sheet__title" id="sortSheetTitle" data-i18n="webRemote.sortSheet.title">Sort by</h2>
+          <button class="sheet__close icon-btn" data-close-sheet aria-label="Close sort" data-i18n-aria-label="webRemote.sortSheet.close"></button>
+        </header>
+        <div class="sheet__body">
+          <div class="sheet__options sheet__options--single" role="radiogroup" aria-label="Sort" data-i18n-aria-label="webRemote.sortSheet.aria" data-filter="sort">
+            <!-- Five FIELDS; direction lives on each row and flips when the
+                 already-selected row is tapped again. Labels are filled by
+                 app.js (they change with direction), so no data-i18n here.
+                 Matches the desktop picker. -->
+            <label class="sheet__option sheet__option--sort"><input type="radio" name="sort" value="name"><span class="sheet__option-label"></span><span class="sheet__option-arrow" aria-hidden="true"></span></label>
+            <label class="sheet__option sheet__option--sort"><input type="radio" name="sort" value="dateAdded"><span class="sheet__option-label"></span><span class="sheet__option-arrow" aria-hidden="true"></span></label>
+            <label class="sheet__option sheet__option--sort"><input type="radio" name="sort" value="duration"><span class="sheet__option-label"></span><span class="sheet__option-arrow" aria-hidden="true"></span></label>
+            <label class="sheet__option sheet__option--sort"><input type="radio" name="sort" value="avgSpeed"><span class="sheet__option-label"></span><span class="sheet__option-arrow" aria-hidden="true"></span></label>
+            <label class="sheet__option sheet__option--sort"><input type="radio" name="sort" value="maxSpeed"><span class="sheet__option-label"></span><span class="sheet__option-arrow" aria-hidden="true"></span></label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Skeleton templates. Cloned by app.js on render-pending state.
+         Match the shape of real cards / rows / grouping rows so the
+         layout doesn't reflow when data arrives (§3.4.1a). -->
+    <template id="tmpl-skeleton-card">
+      <div class="card skeleton" aria-hidden="true">
+        <div class="card__thumb skeleton__plate"></div>
+        <div class="card__body">
+          <div class="skeleton__line skeleton__line--85"></div>
+          <div class="skeleton__line skeleton__line--60 skeleton__line--small"></div>
+        </div>
+      </div>
+    </template>
+    <template id="tmpl-skeleton-row">
+      <div class="list__row skeleton" aria-hidden="true">
+        <div class="list__thumb skeleton__plate"></div>
+        <div class="list__info">
+          <div class="skeleton__line skeleton__line--80"></div>
+          <div class="skeleton__line skeleton__line--40 skeleton__line--small"></div>
+        </div>
+      </div>
+    </template>
+    <template id="tmpl-skeleton-grouping">
+      <div class="grouping-row skeleton" aria-hidden="true">
+        <div class="grouping-row__badge skeleton__plate"></div>
+        <div class="grouping-row__info">
+          <div class="skeleton__line skeleton__line--70"></div>
+          <div class="skeleton__line skeleton__line--40 skeleton__line--small"></div>
+        </div>
+      </div>
+    </template>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
