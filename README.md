@@ -1,3 +1,22 @@
+# FunSync Player with new feature
+
+"Down only"
+
+It works only in Buttplug.io connection with "speed" option. I made this mod, because of me.
+
+I also included a ready-made batch script that will build the complete, ready-to-use application for you in the "dist" folder.
+## How to Install
+
+Just install and start "build-windows-down-only-v3.bat"
+Or just download from release
+
+**[Original project](https://github.com/DaveMakesWaves/funsync-player)**
+
+Original README
+      ↓
+   ↓     ↓
+      ↓
+
 # FunSync Player
 
 A local desktop video player with device synchronization for funscript playback. Built with Electron. Windows and Linux.
