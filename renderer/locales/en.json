@@ -1784,8 +1784,10 @@
       "sprayFailed": "Could not run the spray",
       "machineSpeedOverride": "Fixed speed",
       "machineSpeedUp": "Down only",
-      "machineSpeedOverrideHint": "Overrides Oscillate speed only during upward motion. During downward motion, the script speed is kept. 0 means stop during the upward stroke. The value uses FunSync's speed scale; actual strokes/s depends on the device.",
-      "machineSpeedScript": "Script speed"
+      "machineSpeedOverrideHint": "Upward speed is a percentage of the script speed. After downward motion ends, script speed remains active for the configured time.",
+      "machineSpeedScript": "Script speed",
+      "machineSpeedUpLabel": "Up speed",
+      "machineSpeedGraceLabel": "Script grace after down"
     },
     "tcode": {
       "l0Label": "Stroke (main)",

@@ -1660,8 +1660,10 @@
       "sprayFailed": "无法启动喷雾",
       "machineSpeedOverride": "固定速度",
       "machineSpeedUp": "仅向上",
-      "machineSpeedOverrideHint": "仅在向上移动时替换 Oscillate 速度。向下移动时保持脚本速度。0 表示向上移动时停止。实际往复频率取决于设备。",
-      "machineSpeedScript": "脚本速度"
+      "machineSpeedOverrideHint": "上行时使用脚本速度的百分比。下行结束后，在指定时间内继续使用脚本速度。",
+      "machineSpeedScript": "脚本速度",
+      "machineSpeedUpLabel": "上行速度",
+      "machineSpeedGraceLabel": "下行后的脚本时间"
     },
     "tcode": {
       "l0Label": "冲程 (主)",

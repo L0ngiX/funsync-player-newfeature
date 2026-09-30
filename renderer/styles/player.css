@@ -3659,3 +3659,12 @@ html.has-wco .player__top-bar :is(button, input, select, a, [role="button"], [ta
   border-radius: 0;
   background: none;
 }
+
+.connection-panel__device-speed-control {
+  flex-wrap: wrap;
+  line-height: 1.2;
+}
+
+.connection-panel__device-speed-control > span {
+  white-space: nowrap;
+}

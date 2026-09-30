@@ -36,19 +36,31 @@ const DEFAULT_LOOKAHEAD_MS = 60;      // BLE round-trip compensation — fire co
 const DEFAULT_MIN_STROKE_MS = 60;     // Floor on stroke duration — clamp sub-BLE-roundtrip strokes up
 const DEFAULT_OSCILLATE_MAX_STROKES_PER_SEC = 3; // FunSync's 0-100 speed scale maps 3 strokes/s to 100%.
 
-export function strokesPerSecondToOscillatePercent(strokesPerSecond) {
-  const sps = Number(strokesPerSecond);
-  if (!Number.isFinite(sps) || sps <= 0) return 0;
-  return Math.max(0, Math.min(100, (sps / DEFAULT_OSCILLATE_MAX_STROKES_PER_SEC) * 100));
+export function updateUpSpeedOverrideState(override, pos, prevPos, nowMs) {
+  if (!override) return;
+  const movingDown = pos < prevPos - 0.001;
+  const movingUp = pos > prevPos + 0.001;
+  if (movingDown) {
+    override.lastDirection = 'down';
+    override.scriptGraceUntilMs = 0;
+  } else if (override.lastDirection === 'down' && override.scriptGraceMs > 0) {
+    override.scriptGraceUntilMs = nowMs + override.scriptGraceMs;
+    override.lastDirection = 'transition';
+  } else if (movingUp) {
+    override.lastDirection = 'up';
+  }
 }
 
-export function selectUpSpeedOverride(scriptSpeed, pos, prevPos, override = null) {
-  if (!override || !Number.isFinite(override.strokesPerSecond) || override.strokesPerSecond < 0) {
+export function selectUpSpeedOverride(scriptSpeed, pos, prevPos, override = null, nowMs = null) {
+  if (!override || !Number.isFinite(override.upSpeedPercent) || override.upSpeedPercent < 0) {
     return scriptSpeed;
   }
 
   const movingUp = pos > prevPos + 0.001;
-  return movingUp ? strokesPerSecondToOscillatePercent(override.strokesPerSecond) : scriptSpeed;
+  const graceUntil = Number.isFinite(override.scriptGraceUntilMs) ? override.scriptGraceUntilMs : 0;
+  if (!movingUp || (Number.isFinite(nowMs) && nowMs < graceUntil)) return scriptSpeed;
+
+  return Math.max(0, Math.min(100, scriptSpeed * (override.upSpeedPercent / 100)));
 }
 
 // Backwards-compatible export name for tests/plugins that imported the old helper.
@@ -94,7 +106,7 @@ export class ButtplugSync {
     // from the existing Speed/Position/Hybrid mapping mode: when enabled,
     // it replaces only the selected stroke direction; the other direction
     // continues to use the script-derived speed.
-    this._oscillateSpeedOverrideMap = new Map(); // deviceIndex -> { strokesPerSecond, direction }
+    this._oscillateSpeedOverrideMap = new Map(); // deviceIndex -> { upSpeedPercent, scriptGraceMs, lastDirection, scriptGraceUntilMs }
     this._maxIntensityMap = new Map();      // deviceIndex → 0-100 (safety cap for e-stim)
     this._rampUpMap = new Map();            // deviceIndex → true/false
     // Per-device range: linearly remaps script 0-100 into user's
@@ -775,6 +787,7 @@ export class ButtplugSync {
     const sinceLastMs = Number.isFinite(opts.sinceLastMs) && opts.sinceLastMs > 0
       ? opts.sinceLastMs
       : MIN_SEND_INTERVAL_MS;
+    const nowMs = Number.isFinite(opts.nowMs) ? opts.nowMs : performance.now();
     const devices = this.buttplug.devices;
     // Range Extender applied once before per-device transforms — same
     // stretched input shared across all devices in this send-call.
@@ -806,6 +819,9 @@ export class ButtplugSync {
       const pos = applyCutoff(applyRange(inverted ? 100 - stretchedPos : stretchedPos, range), cutoff);
       const prevPos = applyCutoff(applyRange(inverted ? 100 - stretchedPrev : stretchedPrev, range), cutoff);
 
+      const speedOverride = this._oscillateSpeedOverrideMap.get(dev.index);
+      updateUpSpeedOverrideState(speedOverride, pos, prevPos, nowMs);
+
       if (dev.canLinear && emitLinear) {
         this.buttplug.sendLinear(dev.index, pos, durationMs);
       }
@@ -818,7 +834,7 @@ export class ButtplugSync {
         let intensity = this._computeVibeIntensity(mode, pos, prevPos, sinceLastMs);
         if (mode === 'speed') {
           intensity = selectUpSpeedOverride(
-            intensity, pos, prevPos, this._oscillateSpeedOverrideMap.get(dev.index),
+            intensity, pos, prevPos, this._oscillateSpeedOverrideMap.get(dev.index), nowMs,
           );
         }
         if (this._hasSafetyControls(dev)) intensity = this._applyScalarSafety(dev.index, intensity);
@@ -830,7 +846,7 @@ export class ButtplugSync {
         let intensity = this._computeVibeIntensity(mode, pos, prevPos, sinceLastMs);
         if (mode === 'speed') {
           intensity = selectUpSpeedOverride(
-            intensity, pos, prevPos, this._oscillateSpeedOverrideMap.get(dev.index),
+            intensity, pos, prevPos, this._oscillateSpeedOverrideMap.get(dev.index), nowMs,
           );
         }
         intensity = this._applyScalarSafety(dev.index, intensity);
@@ -845,7 +861,7 @@ export class ButtplugSync {
         let speed = this._computeVibeIntensity(mode, pos, prevPos, sinceLastMs);
         if (mode === 'speed') {
           speed = selectOscillateSpeed(
-            speed, pos, prevPos, this._oscillateSpeedOverrideMap.get(dev.index),
+            speed, pos, prevPos, this._oscillateSpeedOverrideMap.get(dev.index), nowMs,
           );
         }
         speed = this._applyScalarSafety(dev.index, speed);
@@ -861,6 +877,11 @@ export class ButtplugSync {
           this.buttplug.sendRotate(dev.index, speed, clockwise);
         } else {
           let intensity = this._computeVibeIntensity(mode, pos, prevPos, sinceLastMs);
+          if (mode === 'speed') {
+            intensity = selectUpSpeedOverride(
+              intensity, pos, prevPos, this._oscillateSpeedOverrideMap.get(dev.index), nowMs,
+            );
+          }
           if (this._hasSafetyControls(dev)) intensity = this._applyScalarSafety(dev.index, intensity);
           const clockwise = pos >= prevPos;
           this.buttplug.sendRotate(dev.index, intensity, clockwise);
@@ -1244,21 +1265,23 @@ export class ButtplugSync {
   }
 
   /**
-   * Fixed Oscillate speed override for upward 0→100 motion.
-   * Downward 100→0 motion always keeps the script-derived speed.
-   * A value of 0 is valid and means stop during the upward stroke.
+   * Upward speed modifier for derived-speed Buttplug outputs.
+   * Downward motion remains fully script-driven. After downward motion ends,
+   * script speed keeps priority for `scriptGraceMs` before the up modifier applies.
    */
-  setOscillateSpeedOverride(deviceIndex, strokesPerSecond, direction = 'up') {
-    const raw = Number(strokesPerSecond);
-    if (!Number.isFinite(raw) || raw < 0) {
+  setOscillateSpeedOverride(deviceIndex, upSpeedPercent, scriptGraceMs = 0) {
+    const percent = Number(upSpeedPercent);
+    const graceMs = Number(scriptGraceMs);
+    if (!Number.isFinite(percent) || percent < 0 || !Number.isFinite(graceMs) || graceMs < 0) {
       this._oscillateSpeedOverrideMap.delete(deviceIndex);
       return;
     }
-    const sps = Math.min(10, raw);
-    const dir = 'up';
+    const existing = this._oscillateSpeedOverrideMap.get(deviceIndex);
     this._oscillateSpeedOverrideMap.set(deviceIndex, {
-      strokesPerSecond: sps,
-      direction: dir,
+      upSpeedPercent: Math.min(200, percent),
+      scriptGraceMs: Math.min(5000, graceMs),
+      lastDirection: existing?.lastDirection || null,
+      scriptGraceUntilMs: existing?.scriptGraceUntilMs || 0,
     });
   }
 

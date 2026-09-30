@@ -1660,8 +1660,10 @@
       "sprayFailed": "Spray konnte nicht ausgeloest werden",
       "machineSpeedOverride": "Feste Geschwindigkeit",
       "machineSpeedUp": "Nur aufwärts",
-      "machineSpeedOverrideHint": "Ersetzt die Oscillate-Geschwindigkeit nur bei der Aufwärtsbewegung. Bei der Abwärtsbewegung bleibt die Skriptgeschwindigkeit erhalten. 0 bedeutet Stopp bei der Aufwärtsbewegung. Die tatsächliche Hubfrequenz hängt vom Gerät ab.",
-      "machineSpeedScript": "Skriptgeschwindigkeit"
+      "machineSpeedOverrideHint": "Aufwärts wird ein Prozentsatz der Skriptgeschwindigkeit verwendet. Nach Ende der Abwärtsbewegung bleibt die Skriptgeschwindigkeit für die angegebene Zeit aktiv.",
+      "machineSpeedScript": "Skriptgeschwindigkeit",
+      "machineSpeedUpLabel": "Geschwindigkeit nach oben",
+      "machineSpeedGraceLabel": "Skript nach Abwärtsbewegung"
     },
     "tcode": {
       "l0Label": "Stroke (Haupt)",

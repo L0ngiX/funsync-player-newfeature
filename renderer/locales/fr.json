@@ -1660,8 +1660,10 @@
       "sprayFailed": "Impossible de declencher le spray",
       "machineSpeedOverride": "Vitesse fixe",
       "machineSpeedUp": "Vers le bas uniquement",
-      "machineSpeedOverrideHint": "Remplace la vitesse Oscillate uniquement pendant le mouvement vers le haut. Pendant le mouvement vers le bas, la vitesse du script est conservée. 0 signifie arrêt pendant le mouvement vers le haut. La fréquence réelle dépend de l’appareil.",
-      "machineSpeedScript": "Vitesse du script"
+      "machineSpeedOverrideHint": "En montée, un pourcentage de la vitesse du script est utilisé. Après la fin de la descente, la vitesse du script reste active pendant la durée indiquée.",
+      "machineSpeedScript": "Vitesse du script",
+      "machineSpeedUpLabel": "Vitesse vers le haut",
+      "machineSpeedGraceLabel": "Script après la descente"
     },
     "tcode": {
       "l0Label": "Mouvement (principal)",
