@@ -1660,8 +1660,10 @@
       "sprayFailed": "스프레이를 작동할 수 없습니다",
       "machineSpeedOverride": "고정 속도",
       "machineSpeedUp": "하강만",
-      "machineSpeedOverrideHint": "위로 이동할 때만 Oscillate 속도를 대체합니다. 아래로 이동할 때는 스크립트 속도를 유지합니다. 0은 위로 이동할 때 정지를 의미합니다. 실제 스트로크 속도는 기기에 따라 다릅니다.",
-      "machineSpeedScript": "스크립트 속도"
+      "machineSpeedOverrideHint": "상승 시 스크립트 속도의 비율을 사용합니다. 하강이 끝난 후 지정한 시간 동안 스크립트 속도를 유지합니다.",
+      "machineSpeedScript": "스크립트 속도",
+      "machineSpeedUpLabel": "상승 속도",
+      "machineSpeedGraceLabel": "하강 후 스크립트 시간"
     },
     "tcode": {
       "l0Label": "스트로크 (메인)",

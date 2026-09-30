@@ -1543,61 +1543,55 @@ export class ConnectionPanel {
         ));
       }
       if (dev.canVibrate || dev.canOscillate || dev.canScalar || dev.canRotate) {
-        const fixedWrap = document.createElement('label');
-        fixedWrap.className = 'connection-panel__device-speed-control';
-        fixedWrap.title = t('connection.buttplug.machineSpeedOverrideHint');
+        const speedWrap = document.createElement('label');
+        speedWrap.className = 'connection-panel__device-speed-control';
+        speedWrap.title = t('connection.buttplug.machineSpeedOverrideHint');
 
-        const fixedLabel = document.createElement('span');
-        fixedLabel.textContent = t('connection.buttplug.machineSpeedOverride');
-        fixedWrap.appendChild(fixedLabel);
+        const speedLabel = document.createElement('span');
+        speedLabel.textContent = t('connection.buttplug.machineSpeedUpLabel');
+        speedWrap.appendChild(speedLabel);
 
-        const fixedSelect = document.createElement('select');
-        fixedSelect.className = 'connection-panel__device-select';
-        for (const optData of [
-          { value: 'script', label: t('connection.buttplug.machineSpeedScript') },
-          { value: 'up', label: t('connection.buttplug.machineSpeedUp') },
-        ]) {
-          const opt = document.createElement('option');
-          opt.value = optData.value;
-          opt.textContent = optData.label;
-          fixedSelect.appendChild(opt);
-        }
+        const percentInput = document.createElement('input');
+        percentInput.type = 'number';
+        percentInput.className = 'connection-panel__device-speed-input';
+        percentInput.min = '0'; percentInput.max = '200'; percentInput.step = '5';
+        percentInput.inputMode = 'decimal';
 
-        const fixedInput = document.createElement('input');
-        fixedInput.type = 'number';
-        fixedInput.className = 'connection-panel__device-speed-input';
-        fixedInput.min = '0';
-        fixedInput.max = '10';
-        fixedInput.step = '0.1';
-        fixedInput.inputMode = 'decimal';
-        fixedInput.value = String(this.buttplugSync?.getOscillateSpeedOverride(dev.index)?.strokesPerSecond ?? 2);
+        const percentUnit = document.createElement('span');
+        percentUnit.textContent = '%';
 
-        const fixedOverride = this.buttplugSync?.getOscillateSpeedOverride(dev.index);
-        fixedSelect.value = fixedOverride ? 'up' : 'script';
-        fixedInput.disabled = !fixedOverride;
+        const graceLabel = document.createElement('span');
+        graceLabel.textContent = t('connection.buttplug.machineSpeedGraceLabel');
 
-        const applyFixedSpeed = () => {
+        const graceInput = document.createElement('input');
+        graceInput.type = 'number';
+        graceInput.className = 'connection-panel__device-speed-input';
+        graceInput.min = '0'; graceInput.max = '5000'; graceInput.step = '50';
+        graceInput.inputMode = 'numeric';
+
+        const graceUnit = document.createElement('span');
+        graceUnit.textContent = 'ms';
+
+        const savedOverride = this.buttplugSync?.getOscillateSpeedOverride(dev.index);
+        percentInput.value = String(savedOverride?.upSpeedPercent ?? 100);
+        graceInput.value = String(savedOverride?.scriptGraceMs ?? 0);
+
+        const applySpeedSettings = () => {
           if (!this.buttplugSync) return;
-          if (fixedSelect.value === 'script') {
-            this.buttplugSync.clearOscillateSpeedOverride(dev.index);
-          } else {
-            this.buttplugSync.setOscillateSpeedOverride(
-              dev.index, fixedInput.value, fixedSelect.value,
-            );
-          }
-          fixedInput.disabled = fixedSelect.value === 'script';
+          this.buttplugSync.setOscillateSpeedOverride(dev.index, percentInput.value, graceInput.value);
           this._saveButtplugDeviceSettings();
         };
-        fixedInput.addEventListener('change', applyFixedSpeed);
-        fixedInput.addEventListener('blur', applyFixedSpeed);
-        fixedSelect.addEventListener('change', applyFixedSpeed);
+        percentInput.addEventListener('change', applySpeedSettings);
+        percentInput.addEventListener('blur', applySpeedSettings);
+        graceInput.addEventListener('change', applySpeedSettings);
+        graceInput.addEventListener('blur', applySpeedSettings);
 
-        fixedWrap.appendChild(fixedSelect);
-        fixedWrap.appendChild(fixedInput);
-        const unit = document.createElement('span');
-        unit.textContent = 'strokes/s';
-        fixedWrap.appendChild(unit);
-        controlsRow.appendChild(fixedWrap);
+        speedWrap.appendChild(percentInput);
+        speedWrap.appendChild(percentUnit);
+        speedWrap.appendChild(graceLabel);
+        speedWrap.appendChild(graceInput);
+        speedWrap.appendChild(graceUnit);
+        controlsRow.appendChild(speedWrap);
       }
       if (dev.canScalar) {
         controlsRow.appendChild(this._makeModeSelect(dev, 'scalar', t('connection.buttplug.estimModeTitle'), 'position',
@@ -2000,8 +1994,8 @@ export class ConnectionPanel {
       const oscillateSpeedOverride = this.buttplugSync.getOscillateSpeedOverride(dev.index);
       if (oscillateSpeedOverride) {
         settings.oscillateSpeedOverride = {
-          strokesPerSecond: oscillateSpeedOverride.strokesPerSecond,
-          direction: oscillateSpeedOverride.direction,
+          upSpeedPercent: oscillateSpeedOverride.upSpeedPercent,
+          scriptGraceMs: oscillateSpeedOverride.scriptGraceMs,
         };
       }
       const maxIntensity = this.buttplugSync.getMaxIntensity(dev.index);
@@ -2064,12 +2058,16 @@ export class ConnectionPanel {
         if (saved.rotateMode) this.buttplugSync.setRotateMode(dev.index, saved.rotateMode);
         if (saved.oscillateMode) this.buttplugSync.setOscillateMode(dev.index, saved.oscillateMode);
         if (saved.oscillateSpeedOverride
-          && Number.isFinite(saved.oscillateSpeedOverride.strokesPerSecond)
-          && saved.oscillateSpeedOverride.strokesPerSecond >= 0) {
+          && Number.isFinite(saved.oscillateSpeedOverride.upSpeedPercent)
+          && Number.isFinite(saved.oscillateSpeedOverride.scriptGraceMs)) {
           this.buttplugSync.setOscillateSpeedOverride(
-            dev.index,
-            saved.oscillateSpeedOverride.strokesPerSecond,
-            saved.oscillateSpeedOverride.direction,
+            dev.index, saved.oscillateSpeedOverride.upSpeedPercent, saved.oscillateSpeedOverride.scriptGraceMs,
+          );
+        } else if (saved.oscillateSpeedOverride
+          && Number.isFinite(saved.oscillateSpeedOverride.strokesPerSecond)) {
+          // v5 migration: old fixed strokes/s -> percentage of script speed.
+          this.buttplugSync.setOscillateSpeedOverride(
+            dev.index, (saved.oscillateSpeedOverride.strokesPerSecond / 3) * 100, 0,
           );
         }
         if (saved.maxIntensity !== undefined) this.buttplugSync.setMaxIntensity(dev.index, saved.maxIntensity);

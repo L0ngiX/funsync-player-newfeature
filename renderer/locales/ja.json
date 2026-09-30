@@ -1660,8 +1660,10 @@
       "sprayFailed": "スプレーを作動できませんでした",
       "machineSpeedOverride": "固定速度",
       "machineSpeedUp": "下降のみ",
-      "machineSpeedOverrideHint": "上方向への移動中のみOscillate速度を置き換えます。下方向への移動中はスクリプトの速度を維持します。0は上方向への移動を停止します。実際のストローク速度はデバイスによって異なります。",
-      "machineSpeedScript": "スクリプト速度"
+      "machineSpeedOverrideHint": "上方向ではスクリプト速度の割合を使用します。下降終了後は指定時間だけスクリプト速度を維持します。",
+      "machineSpeedScript": "スクリプト速度",
+      "machineSpeedUpLabel": "上方向の速度",
+      "machineSpeedGraceLabel": "下降後のスクリプト時間"
     },
     "tcode": {
       "l0Label": "ストローク (メイン)",

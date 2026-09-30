@@ -1,44 +1,38 @@
 /** @vitest-environment node */
 import { describe, it, expect } from 'vitest';
-import {
-  strokesPerSecondToOscillatePercent,
-  selectOscillateSpeed,
-  selectUpSpeedOverride,
-} from '../../renderer/js/buttplug-sync.js';
+import { selectUpSpeedOverride, updateUpSpeedOverrideState } from '../../renderer/js/buttplug-sync.js';
 
-describe('Buttplug fixed Oscillate up-speed override', () => {
-  it('maps 3 strokes/s to 100% and 1.5 strokes/s to 50%', () => {
-    expect(strokesPerSecondToOscillatePercent(3)).toBe(100);
-    expect(strokesPerSecondToOscillatePercent(1.5)).toBe(50);
-    expect(strokesPerSecondToOscillatePercent(0)).toBe(0);
+describe('Buttplug upward script-speed modifier', () => {
+  it('uses a percentage of the script speed on upward motion', () => {
+    const override = { upSpeedPercent: 50 };
+    expect(selectUpSpeedOverride(80, 80, 60, override)).toBe(40);
+    expect(selectUpSpeedOverride(35, 60, 80, override)).toBe(35);
   });
 
-  it('overrides only an upward 0→100 movement', () => {
-    const override = { strokesPerSecond: 2, direction: 'up' };
-    expect(selectOscillateSpeed(25, 80, 60, override)).toBeCloseTo(66.6667, 4);
-    expect(selectOscillateSpeed(25, 60, 80, override)).toBe(25);
-    expect(selectOscillateSpeed(25, 60, 60, override)).toBe(25);
+  it('supports 0% as a real upward override', () => {
+    const override = { upSpeedPercent: 0 };
+    expect(selectUpSpeedOverride(70, 80, 60, override)).toBe(0);
+    expect(selectUpSpeedOverride(70, 60, 80, override)).toBe(70);
   });
 
-  it('allows 0 strokes/s to stop the upward stroke', () => {
-    const override = { strokesPerSecond: 0, direction: 'up' };
-    expect(selectOscillateSpeed(70, 80, 60, override)).toBe(0);
-    expect(selectOscillateSpeed(70, 60, 80, override)).toBe(70);
+  it('keeps script speed during the post-down grace period', () => {
+    const override = { upSpeedPercent: 25, scriptGraceUntilMs: 1200 };
+    expect(selectUpSpeedOverride(80, 80, 60, override, 1000)).toBe(80);
+    expect(selectUpSpeedOverride(80, 80, 60, override, 1200)).toBe(20);
   });
 
-  it('applies to Vibe/Scalar/Rotate speed paths because they share the derived speed calculation', () => {
-    const override = { strokesPerSecond: 1.5, direction: 'up' };
-    expect(selectUpSpeedOverride(20, 80, 60, override)).toBeCloseTo(50, 4);
-    expect(selectUpSpeedOverride(20, 60, 80, override)).toBe(20);
+  it('starts the grace timer exactly when downward motion ends', () => {
+    const override = { upSpeedPercent: 40, scriptGraceMs: 300, lastDirection: null, scriptGraceUntilMs: 0 };
+    updateUpSpeedOverrideState(override, 40, 60, 1000);
+    expect(override.lastDirection).toBe('down');
+    updateUpSpeedOverrideState(override, 40, 40, 1040);
+    expect(override.scriptGraceUntilMs).toBe(1340);
+    expect(override.lastDirection).toBe('transition');
+    expect(selectUpSpeedOverride(80, 60, 40, override, 1200)).toBe(80);
+    expect(selectUpSpeedOverride(80, 60, 40, override, 1340)).toBe(32);
   });
 
   it('leaves script-derived speed untouched when override is absent', () => {
-    expect(selectOscillateSpeed(42, 60, 80, null)).toBe(42);
-  });
-
-  it('allows 0 strokes/s as a real override', () => {
-    const override = { strokesPerSecond: 0, direction: 'up' };
-    expect(selectUpSpeedOverride(70, 80, 60, override)).toBe(0);
-    expect(selectUpSpeedOverride(70, 60, 80, override)).toBe(70);
+    expect(selectUpSpeedOverride(42, 80, 60, null)).toBe(42);
   });
 });
